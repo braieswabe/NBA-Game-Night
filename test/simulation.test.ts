@@ -22,7 +22,7 @@ const teams: TeamInput[] = [
     c: "Victor Wembanyama",
   },
   {
-    name: "DAGGER",
+    name: "BRAIE",
     color: "#f43f5e",
     pg: "Stephen Curry",
     sg: "Shai Gilgeous-Alexander",

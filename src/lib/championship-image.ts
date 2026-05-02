@@ -1,5 +1,7 @@
+import { faceReferencesAligned, facePortraitDisplayUrl } from "@/lib/face-references-align";
 import { referenceFaceForRosterPlayer } from "@/lib/face-reference-matching";
-import type { Game, League } from "@/lib/types";
+import { ownerForTeam } from "@/lib/leaderboard";
+import type { Game, League, Team } from "@/lib/types";
 
 export type ChampionshipImageScene = {
   winnerTeamName: string;
@@ -8,7 +10,18 @@ export type ChampionshipImageScene = {
   loserTeamColor: string;
   mvpPlayerName: string;
   loserSpotlightPlayerName: string;
+  /** Full winning roster (PG–C) for the image prompt. */
+  winnerRosterPlayers: string[];
+  /** Full losing roster for the crying group. */
+  loserRosterPlayers: string[];
+  /** Same identity keys as the leaderboard (BRAIE / LORENZO / ALLEN by team slot). */
+  winnerLedgerOwnerName: string;
+  loserLedgerOwnerName: string;
 };
+
+function teamRoster(team: Team) {
+  return [team.pg, team.sg, team.sf, team.pf, team.c];
+}
 
 export type ChampionshipImageReferencePayload = {
   name: string;
@@ -49,9 +62,9 @@ export function buildChampionshipImageRequest(league: League, game: Game): Build
 
   const winIdx = league.teams.findIndex((team) => team.id === winnerTeam.id);
   const loseIdx = league.teams.findIndex((team) => team.id === loserTeam.id);
-  const refs = league.faceReferences ?? [];
-  const winRef = refs[winIdx];
-  const loseRef = refs[loseIdx];
+  const alignedRefs = faceReferencesAligned(league.teams, league.faceReferences);
+  const winRef = alignedRefs[winIdx];
+  const loseRef = alignedRefs[loseIdx];
 
   const mvpPlayer = simulation.mvp.player;
   let loserPlayer = losingSpotlightPlayer(simulation, loserTeam.name);
@@ -61,16 +74,21 @@ export function buildChampionshipImageRequest(league: League, game: Game): Build
   const backgroundRef = referenceFaceForRosterPlayer(loseRef, loserPlayer);
 
   const warnings: string[] = [];
-  if (winRef?.imageDataUrl && !podiumRef) {
+  if (facePortraitDisplayUrl(winRef) && !podiumRef) {
     warnings.push(
       `Championship MVP is ${mvpPlayer}. Link team ${winnerTeam.name}'s uploaded face to that roster player (or clear the link) so they can appear on the podium.`,
     );
   }
-  if (loseRef?.imageDataUrl && !backgroundRef) {
+  if (facePortraitDisplayUrl(loseRef) && !backgroundRef) {
     warnings.push(
       `For the losing bench reaction, link ${loserTeam.name}'s face to ${loserPlayer} (their leading scorer in this game) or clear the link to use your upload in the background.`,
     );
   }
+
+  const winnerRosterPlayers = teamRoster(winnerTeam);
+  const loserRosterPlayers = teamRoster(loserTeam);
+  const winnerLedgerOwnerName = ownerForTeam(league, winnerTeam) ?? winnerTeam.name;
+  const loserLedgerOwnerName = ownerForTeam(league, loserTeam) ?? loserTeam.name;
 
   const scene: ChampionshipImageScene = {
     winnerTeamName: winnerTeam.name,
@@ -79,24 +97,34 @@ export function buildChampionshipImageRequest(league: League, game: Game): Build
     loserTeamColor: loserTeam.color,
     mvpPlayerName: mvpPlayer,
     loserSpotlightPlayerName: loserPlayer,
+    winnerRosterPlayers,
+    loserRosterPlayers,
+    winnerLedgerOwnerName,
+    loserLedgerOwnerName,
   };
 
   const references: ChampionshipImageReferencePayload[] = [];
   if (podiumRef) {
-    references.push({
-      name: podiumRef.name,
-      linkedPlayerName: podiumRef.linkedPlayerName,
-      imageDataUrl: podiumRef.imageDataUrl,
-      role: "podium_mvp",
-    });
+    const portrait = facePortraitDisplayUrl(podiumRef);
+    if (portrait && portrait.startsWith("data:image/")) {
+      references.push({
+        name: podiumRef.name,
+        linkedPlayerName: podiumRef.linkedPlayerName,
+        imageDataUrl: portrait,
+        role: "podium_mvp",
+      });
+    }
   }
   if (backgroundRef) {
-    references.push({
-      name: backgroundRef.name,
-      linkedPlayerName: backgroundRef.linkedPlayerName,
-      imageDataUrl: backgroundRef.imageDataUrl,
-      role: "loser_background",
-    });
+    const portrait = facePortraitDisplayUrl(backgroundRef);
+    if (portrait && portrait.startsWith("data:image/")) {
+      references.push({
+        name: backgroundRef.name,
+        linkedPlayerName: backgroundRef.linkedPlayerName,
+        imageDataUrl: portrait,
+        role: "loser_background",
+      });
+    }
   }
 
   return {

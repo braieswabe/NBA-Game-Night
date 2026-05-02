@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { faceReferencesAligned } from "@/lib/face-references-align";
 import { leagueInputSchema } from "@/lib/schemas";
 import { createAndSaveLeague } from "@/lib/storage";
 import type { FaceReference, TeamInput } from "@/lib/types";
@@ -33,7 +34,7 @@ const presets: TeamInput[] = [
     c: "Victor Wembanyama",
   },
   {
-    name: "DAGGER",
+    name: "BRAIE",
     color: "#f43f5e",
     pg: "Stephen Curry",
     sg: "Shai Gilgeous-Alexander",
@@ -57,17 +58,35 @@ export default function CreateLeaguePage() {
   }
 
   function submit() {
+    setError(null);
     const result = leagueInputSchema.safeParse({ name: leagueName, teams });
     if (!result.success) {
-      setError("Fill in every team name, color, and roster slot before starting the league.");
+      const detail = result.error.issues
+        .slice(0, 4)
+        .map((issue) => {
+          const path = issue.path.filter(Boolean).join(".") || "form";
+          return `${path}: ${issue.message}`;
+        })
+        .join(" · ");
+      setError(
+        detail ||
+          "Fill in every team name, a hex color like #1a2b3c for each team, and every roster slot before saving.",
+      );
       return;
     }
-    const league = createAndSaveLeague(
-      result.data.name,
-      result.data.teams,
-      faceReferences.filter((reference) => reference.name.trim() && reference.imageDataUrl),
-    );
-    router.push(`/league/${league.id}`);
+    try {
+      const alignedFaces = faceReferencesAligned(result.data.teams, faceReferences);
+      const league = createAndSaveLeague(result.data.name, result.data.teams, alignedFaces);
+      router.push(`/league/${league.id}`);
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "QuotaExceededError") {
+        setError(
+          "This browser ran out of storage saving your league (often large face photos). Remove or shrink uploads, or clear site data for this app, then try again.",
+        );
+        return;
+      }
+      setError("Could not save the league. Check the browser console for details and try again.");
+    }
   }
 
   return (
@@ -78,10 +97,17 @@ export default function CreateLeaguePage() {
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-amber-200">Team Builder</p>
             <h1 className="mt-3 text-4xl font-black md:text-6xl">Create a 3-Team League</h1>
           </div>
-          <Button onClick={submit} disabled={!parsed.success} size="lg">
+          <Button type="button" onClick={submit} size="lg">
             <PlusCircle className="h-4 w-4" /> Save League
           </Button>
         </header>
+
+        {!parsed.success ? (
+          <p className="mb-4 text-sm text-amber-200/90">
+            League details look incomplete (for example each team color must be exactly # followed by six hex digits).
+            Press Save to see what still needs fixing.
+          </p>
+        ) : null}
 
         <Card className="mb-5">
           <CardContent className="grid gap-3 p-5 md:grid-cols-[180px_1fr] md:items-center">
@@ -104,9 +130,19 @@ export default function CreateLeaguePage() {
                 <CardTitle>Team {index + 1}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Field label="Team Name" value={team.name} onChange={(value) => updateTeam(index, "name", value)} />
+                <Field
+                  label="Team Name"
+                  inputId={`create-team-${index}-name`}
+                  value={team.name}
+                  onChange={(value) => updateTeam(index, "name", value)}
+                />
                 <div className="grid grid-cols-[1fr_52px] gap-3">
-                  <Field label="Team Color" value={team.color} onChange={(value) => updateTeam(index, "color", value)} />
+                  <Field
+                    label="Team Color"
+                    inputId={`create-team-${index}-color`}
+                    value={team.color}
+                    onChange={(value) => updateTeam(index, "color", value)}
+                  />
                   <input
                     aria-label={`${team.name} color`}
                     className="mt-6 h-10 w-full rounded-md border border-white/12 bg-black"
@@ -116,11 +152,11 @@ export default function CreateLeaguePage() {
                   />
                 </div>
                 <div className="grid gap-3">
-                  <Field label="PG" value={team.pg} onChange={(value) => updateTeam(index, "pg", value)} />
-                  <Field label="SG" value={team.sg} onChange={(value) => updateTeam(index, "sg", value)} />
-                  <Field label="SF" value={team.sf} onChange={(value) => updateTeam(index, "sf", value)} />
-                  <Field label="PF" value={team.pf} onChange={(value) => updateTeam(index, "pf", value)} />
-                  <Field label="C" value={team.c} onChange={(value) => updateTeam(index, "c", value)} />
+                  <Field label="PG" inputId={`create-team-${index}-pg`} value={team.pg} onChange={(value) => updateTeam(index, "pg", value)} />
+                  <Field label="SG" inputId={`create-team-${index}-sg`} value={team.sg} onChange={(value) => updateTeam(index, "sg", value)} />
+                  <Field label="SF" inputId={`create-team-${index}-sf`} value={team.sf} onChange={(value) => updateTeam(index, "sf", value)} />
+                  <Field label="PF" inputId={`create-team-${index}-pf`} value={team.pf} onChange={(value) => updateTeam(index, "pf", value)} />
+                  <Field label="C" inputId={`create-team-${index}-c`} value={team.c} onChange={(value) => updateTeam(index, "c", value)} />
                 </div>
               </CardContent>
             </Card>
@@ -131,12 +167,21 @@ export default function CreateLeaguePage() {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  const id = label.replace(/\s+/g, "-").toLowerCase();
+function Field({
+  label,
+  inputId,
+  value,
+  onChange,
+}: {
+  label: string;
+  inputId: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+      <Label htmlFor={inputId}>{label}</Label>
+      <Input id={inputId} value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }

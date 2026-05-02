@@ -53,7 +53,7 @@ export default function LeaderboardPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-amber-200">Championship Table</p>
             <h1 className="mt-3 text-4xl font-black md:text-6xl">Leaderboard</h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">
-              BRAIE, LORENZO, and ALLEN always appear here. Portraits are the face photos you upload in Create League or Finals—saved with your league everywhere, no extra step.
+              BRAIE, LORENZO, and ALLEN always appear here. Portraits come from face photos in Create League or Finals. When you generate a finals championship image as the winner, it also shows on your row here.
             </p>
           </div>
           <Button asChild variant="secondary">
@@ -74,6 +74,17 @@ export default function LeaderboardPage() {
                   {spotlight.championships} championship{spotlight.championships === 1 ? "" : "s"},{" "}
                   {spotlight.finalsAppearances} finals appearance{spotlight.finalsAppearances === 1 ? "" : "s"}.
                 </p>
+                {spotlight.championshipCelebrationUrl ? (
+                  <div className="mt-5">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Latest championship scene</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={spotlight.championshipCelebrationUrl}
+                      alt=""
+                      className="aspect-[3/2] w-full max-w-xl rounded-lg border border-white/10 object-cover shadow-lg"
+                    />
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -89,9 +100,9 @@ export default function LeaderboardPage() {
           ) : (
             leaderboard.map((entry) => (
               <Card key={entry.name}>
-                <CardContent className="grid gap-4 p-4 md:grid-cols-[56px_1fr_130px_130px] md:items-center">
+                <CardContent className="grid gap-4 p-4 md:grid-cols-[56px_1fr_130px_130px] md:items-start">
                   <RowAvatar src={entry.portraitUrl} label={entry.name} />
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xl font-bold text-white">{entry.name}</p>
                       {spotlight && entry.name === spotlight.name && hasAnyFinals ? (
@@ -101,9 +112,20 @@ export default function LeaderboardPage() {
                       ) : null}
                     </div>
                     <p className="mt-1 text-sm text-zinc-500">{entry.teams.length ? entry.teams.join(", ") : "—"}</p>
+                    {entry.championshipCelebrationUrl ? (
+                      <div className="mt-3">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Championship</p>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={entry.championshipCelebrationUrl}
+                          alt=""
+                          className="aspect-[3/2] w-full max-w-[220px] rounded-md border border-white/10 object-cover"
+                        />
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="font-mono text-amber-200">{entry.championships} titles</div>
-                  <div className="font-mono text-zinc-300">{entry.finalsAppearances} finals</div>
+                  <div className="font-mono text-amber-200 md:self-center">{entry.championships} titles</div>
+                  <div className="font-mono text-zinc-300 md:self-center">{entry.finalsAppearances} finals</div>
                 </CardContent>
               </Card>
             ))

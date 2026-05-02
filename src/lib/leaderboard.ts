@@ -15,6 +15,8 @@ export type LeaderboardEntry = {
   teams: string[];
   /** Uploaded reference photo, or legacy AI portrait — no extra step required. */
   portraitUrl?: string;
+  /** Latest AI championship podium image from a finals they won (same asset as Finals page). */
+  championshipCelebrationUrl?: string;
 };
 
 export function completedGames(league: League) {
@@ -74,6 +76,24 @@ function collectLedgerPortrait(leagues: League[], player: LedgerOwnerName): stri
   return portrait;
 }
 
+function collectLatestChampionshipCelebration(leagues: League[], player: LedgerOwnerName): string | undefined {
+  const leaguesNewestFirst = [...leagues].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+  for (const league of leaguesNewestFirst) {
+    const finalsWithImage = completedFinals(league)
+      .filter((game) => game.celebrationImageUrl?.trim() && game.winnerTeamId)
+      .slice()
+      .reverse();
+    for (const game of finalsWithImage) {
+      const winner = teamForGame(league, game, game.winnerTeamId!);
+      const owner = ownerForTeam(league, winner);
+      if (owner === player) return game.celebrationImageUrl;
+    }
+  }
+  return undefined;
+}
+
 /** Always BRAIE → LORENZO → ALLEN with merged stats and best-known face assets across leagues. */
 export function buildLeaderboard(leagues: League[]): LeaderboardEntry[] {
   const tally = new Map<LedgerOwnerName, { championships: number; finalsAppearances: number; teams: Set<string> }>();
@@ -109,6 +129,7 @@ export function buildLeaderboard(leagues: League[]): LeaderboardEntry[] {
       finalsAppearances: row.finalsAppearances,
       teams: [...row.teams],
       portraitUrl: collectLedgerPortrait(leagues, id),
+      championshipCelebrationUrl: collectLatestChampionshipCelebration(leagues, id),
     };
   });
 }

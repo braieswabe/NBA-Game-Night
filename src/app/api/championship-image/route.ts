@@ -18,6 +18,10 @@ const sceneSchema = z.object({
   loserTeamColor: z.string().min(1).max(20),
   mvpPlayerName: z.string().min(1).max(80),
   loserSpotlightPlayerName: z.string().min(1).max(80),
+  winnerRosterPlayers: z.array(z.string().min(1)).length(5),
+  loserRosterPlayers: z.array(z.string().min(1)).length(5),
+  winnerLedgerOwnerName: z.string().min(1).max(40),
+  loserLedgerOwnerName: z.string().min(1).max(40),
 });
 
 const referenceSchema = z.object({
@@ -105,20 +109,27 @@ async function prepareImagePrompt(
         {
           role: "system",
           content:
-            "You prepare image prompts for cinematic sports portraits. Return JSON only. Do not add real logos, NBA branding, or celebrity/player likeness instructions. The winner is alone on the podium; any second reference is only for a distant defeated bench reaction—not on the podium.",
+            "You prepare image prompts for cinematic basketball championship stills. Return JSON only. Do not add real NBA or league logos. Reference photos map to the same league-owner identities used on the in-app leaderboard (winnerLedgerOwnerName / loserLedgerOwnerName). The winning user's face (first reference) must appear on the MVP; the entire winning roster of five fictional NBA-style players must share the winner podium celebration; the entire losing roster must appear together as a second group, crying, separate from the podium.",
         },
         {
           role: "user",
           content: `Create a detailed prompt for an image generator.
 
-Scene (winner vs loser teams are fictional custom squads, colors as hex or names): ${sceneBlock}
+Scene JSON (includes rosters and leaderboard-linked owner labels): ${sceneBlock}
+
+Winning roster (all five must appear on the winner side with ${scene.winnerTeamName} ${scene.winnerTeamColor} custom jerseys): ${scene.winnerRosterPlayers.join(", ")}.
+Losing roster (all five must appear together, crying, in ${scene.loserTeamName} ${scene.loserTeamColor} jerseys, clearly defeated): ${scene.loserRosterPlayers.join(", ")}.
+
+Leaderboard identity linkage (for narration only—no real-person names beyond these labels): champion-side owner slot "${scene.winnerLedgerOwnerName}" matches the MVP reference face; defeated-side owner slot "${scene.loserLedgerOwnerName}" matches the emotional losing-bench reference if provided.
 
 Reference photos (in file order for the editor):
 ${refLabels || "No uploads; invent fictional athletes."}
 
-STRICT layout:
-- ${scene.mvpPlayerName} from winning team ${scene.winnerTeamName} only on the podium with trophy and ${scene.winnerTeamColor} custom jerseys.
-- Defeated team ${scene.loserTeamName} in ${scene.loserTeamColor} appears only as a distant emotional background (tears, slumped), especially ${scene.loserSpotlightPlayerName} if a second reference is provided—never sharing the podium with the MVP.
+STRICT composition:
+- Center podium: finals MVP ${scene.mvpPlayerName} (${scene.winnerTeamName}) with trophy, ${scene.winnerTeamColor} gear; use reference #1 for that player's face (league member tied to ${scene.winnerLedgerOwnerName} on the leaderboard).
+- Same frame, same winner group: the other four starters ${scene.winnerRosterPlayers.filter((p) => p !== scene.mvpPlayerName).join(", ")} flank or ring the MVP so ALL FIVE ${scene.winnerTeamName} players are visible as one winning unit (fictional faces except the MVP likeness from the reference).
+- Losing team ${scene.loserTeamName}: show the FULL roster ${scene.loserRosterPlayers.join(", ")} together off the podium—tears, red eyes, hugging, devastated body language—${scene.loserTeamColor} jerseys. If a second reference exists, use it for ${scene.loserSpotlightPlayerName}'s face in that crying cluster; invent plausible faces for the other four losers.
+- Depth: losers mid-ground or tunnel; never standing on the champion podium.
 
 ${orderNotes}
 
@@ -154,11 +165,11 @@ function describeReferenceOrder(scene: ChampionshipImageScene, references: Refer
   references.forEach((reference, index) => {
     if (reference.role === "podium_mvp") {
       lines.push(
-        `Image ${index + 1}: likeness source for ${scene.mvpPlayerName} (${scene.winnerTeamName}) — center podium hero only.`,
+        `Image ${index + 1}: likeness for league owner ${scene.winnerLedgerOwnerName} → MVP ${scene.mvpPlayerName} (${scene.winnerTeamName}); rest of winner five are fictional athletes in the same ${scene.winnerTeamColor} uniforms.`,
       );
     } else {
       lines.push(
-        `Image ${index + 1}: likeness source for ${scene.loserSpotlightPlayerName} (${scene.loserTeamName}) — far background, crying/defeated, smaller, not on podium.`,
+        `Image ${index + 1}: likeness for league owner ${scene.loserLedgerOwnerName} → ${scene.loserSpotlightPlayerName} in the crying ${scene.loserTeamName} group (${scene.loserTeamColor}); whole losing five visible and emotional, not on podium.`,
       );
     }
   });
@@ -168,21 +179,23 @@ function describeReferenceOrder(scene: ChampionshipImageScene, references: Refer
 function fallbackPrompt(basePrompt: string, scene: ChampionshipImageScene, references: ReferenceInput[]) {
   const podium = references.find((reference) => reference.role === "podium_mvp");
   const bench = references.find((reference) => reference.role === "loser_background");
+  const winnerFive = scene.winnerRosterPlayers.join(", ");
+  const loserFive = scene.loserRosterPlayers.join(", ");
   const likenessParts: string[] = [];
   if (podium) {
     likenessParts.push(
-      `Use the first reference photo to preserve the face of league member ${podium.name} as fictional finals MVP ${scene.mvpPlayerName} for team ${scene.winnerTeamName} in ${scene.winnerTeamColor} custom gear on the podium only.`,
+      `Use the first reference for league owner ${scene.winnerLedgerOwnerName} (${podium.name}) as the face of MVP ${scene.mvpPlayerName} on ${scene.winnerTeamName}'s podium in ${scene.winnerTeamColor}. Show ALL FIVE winners together: ${winnerFive}, same team celebration, fictional faces for the non-MVP starters.`,
     );
   }
   if (bench) {
     likenessParts.push(
-      `If a second reference is present, use it only for ${scene.loserSpotlightPlayerName} on defeated ${scene.loserTeamName} (${scene.loserTeamColor}) in the deep background looking heartbroken with teammates—tears, soft focus, not on the podium.`,
+      `Use the second reference for ${scene.loserLedgerOwnerName} (${bench.name}) as ${scene.loserSpotlightPlayerName} within the ENTIRE defeated ${scene.loserTeamName} group (${loserFive}) in ${scene.loserTeamColor}, all crying and emotional off the podium.`,
     );
   }
   return [
     basePrompt,
     likenessParts.join(" ") ||
-      `Fictional MVP ${scene.mvpPlayerName} and defeated ${scene.loserTeamName} with no real league branding.`,
+      `Fictional championship: MVP ${scene.mvpPlayerName} with full winner five (${winnerFive}) vs full losing five (${loserFive}) crying in ${scene.loserTeamColor}, no real league branding.`,
     "Premium fictional jerseys, confetti, arena lights, no real NBA logos.",
   ].join(" ");
 }
