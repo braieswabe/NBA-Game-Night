@@ -108,7 +108,7 @@ export default function LeaguePage() {
           {nextGame ? (
             <Button onClick={simulateNext} disabled={simulating} size="lg">
               {finalsGame && nextGame.gameType === "finals" ? <Trophy className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              {simulating ? "Simulating..." : "Simulate Next Game"}
+              {simulating ? "Writing broadcast story…" : "Simulate Next Game"}
             </Button>
           ) : championGame ? (
             <Button asChild size="lg">

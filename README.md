@@ -17,7 +17,7 @@ The game works without OpenAI credentials by using the deterministic local simul
 
 ```bash
 OPENAI_API_KEY=...
-OPENAI_TEXT_MODEL=gpt-5.4-mini
+OPENAI_TEXT_MODEL=gpt-4o-mini
 OPENAI_IMAGE_PROMPT_MODEL=gpt-4o-mini
 OPENAI_IMAGE_MODEL=gpt-image-2
 DATABASE_URL=postgres://...

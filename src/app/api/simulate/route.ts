@@ -1,6 +1,10 @@
+import { randomUUID } from "node:crypto";
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { simulationSchema } from "@/lib/schemas";
+
+/** Allow long Responses API runs when enriching the broadcast (e.g. on Vercel). */
+export const maxDuration = 120;
 
 let client: OpenAI | null = null;
 
@@ -138,18 +142,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid base simulation." }, { status: 400 });
   }
 
-  const model = process.env.OPENAI_TEXT_MODEL ?? "gpt-5.4-mini";
+  const model = process.env.OPENAI_TEXT_MODEL ?? "gpt-4o-mini";
   const response = await openai.responses.create({
     model,
     input: [
       {
         role: "system",
         content:
-          "You are the narration engine for a cinematic basketball fantasy simulator. Return valid JSON only. Preserve the finalResult winner, loser, and scores exactly as provided.",
+          "You are the narration engine for a cinematic basketball fantasy simulator. Return valid JSON only. Preserve the finalResult winner, loser, and scores exactly as provided. Each response must use fresh wording, varied broadcast metaphors, and different sentence rhythms—avoid repeating the same canned paragraphs or cliché stacks across games.",
       },
       {
         role: "user",
-        content: `Rewrite and enrich this simulation as a realistic NBA broadcast documentary while keeping every finalResult field unchanged. Do not reveal winner, final score, or MVP in fields before finalResult. Keep stats plausible and consistent.\n\n${JSON.stringify(parsedBase.data)}`,
+        content: `Rewrite and enrich this simulation as a realistic NBA broadcast documentary while keeping every finalResult field unchanged. Do not reveal winner, final score, or MVP in fields before finalResult. Keep stats plausible and consistent with the box score implied by finalResult.
+
+Rewrite session id (for uniqueness): ${randomUUID()}
+
+Base simulation JSON:
+${JSON.stringify(parsedBase.data)}`,
       },
     ],
     text: {

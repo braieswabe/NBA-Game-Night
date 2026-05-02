@@ -190,45 +190,29 @@ async function syncLocalLeaguesToDatabaseLegacy(local: League[], remote: League[
 
 export async function simulateAndSaveGame(league: League, game: Game) {
   const baseGame = simulateGame(league, game);
-  const nextLeague = applySimulatedGame(league, baseGame);
+  if (!baseGame.simulation) {
+    const nextLeague = applySimulatedGame(league, baseGame);
+    saveLeague(nextLeague);
+    return nextLeague;
+  }
+
+  const enriched = await requestAiSimulation(league, baseGame, baseGame.simulation);
+  const finalGame: Game =
+    enriched != null && typeof enriched === "object"
+      ? { ...baseGame, simulation: lockSimulationResult(baseGame.simulation, enriched) }
+      : baseGame;
+
+  const nextLeague = applySimulatedGame(league, finalGame);
   saveLeague(nextLeague);
-  void enrichSimulationInBackground(nextLeague.id, baseGame);
   return nextLeague;
-}
-
-async function enrichSimulationInBackground(leagueId: string, baseGame: Game) {
-  if (!baseGame.simulation) return;
-  const currentLeague = getLeague(leagueId);
-  if (!currentLeague) return;
-  const enrichedSimulation = await requestAiSimulation(currentLeague, baseGame, baseGame.simulation);
-  if (!enrichedSimulation) return;
-
-  const latestLeague = getLeague(leagueId);
-  if (!latestLeague) return;
-  const latestGame = latestLeague.games.find((game) => game.id === baseGame.id);
-  if (!latestGame?.simulation) return;
-
-  const enrichedGame = {
-    ...latestGame,
-    simulation: lockSimulationResult(latestGame.simulation, enrichedSimulation),
-  };
-  const nextLeague = {
-    ...latestLeague,
-    games: latestLeague.games.map((game) => (game.id === enrichedGame.id ? enrichedGame : game)),
-    updatedAt: new Date().toISOString(),
-  };
-  saveLeague(nextLeague);
 }
 
 async function requestAiSimulation(league: League, game: Game, baseSimulation?: Simulation) {
   if (!baseSimulation) return null;
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 3500);
   try {
     const response = await fetch("/api/simulate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
       body: JSON.stringify({ league, game, baseSimulation }),
     });
     if (!response.ok) return null;
@@ -236,8 +220,6 @@ async function requestAiSimulation(league: League, game: Game, baseSimulation?: 
     return payload.simulation ?? null;
   } catch {
     return null;
-  } finally {
-    window.clearTimeout(timeout);
   }
 }
 
