@@ -144,21 +144,6 @@ export function updateLeagueFaceReferences(league: League, faceReferences: FaceR
   return nextLeague;
 }
 
-export function updateFaceReferenceAvatar(leagues: League[], referenceName: string, avatarImageUrl: string) {
-  const nextLeagues = leagues.map((league) => ({
-    ...league,
-    faceReferences: league.faceReferences?.map((reference) =>
-      reference.name.toLowerCase() === referenceName.toLowerCase()
-        ? { ...reference, avatarImageUrl }
-        : reference,
-    ),
-    updatedAt: new Date().toISOString(),
-  }));
-  saveLeagues(nextLeagues);
-  nextLeagues.forEach((league) => void persistLeagueToDatabase(league));
-  return nextLeagues;
-}
-
 export function mergeLeagues(local: League[], remote: League[]) {
   const byId = new Map<string, League>();
   [...local, ...remote].forEach((league) => {

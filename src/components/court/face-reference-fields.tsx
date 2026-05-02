@@ -7,23 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { FaceReference, Team, TeamInput } from "@/lib/types";
 
-const defaultNames = ["Allen", "Lorenzo", "Braie"];
+export { emptyFaceReferences, faceReferencesAligned } from "@/lib/face-references-align";
 
 const ROSTER_KEYS = ["pg", "sg", "sf", "pf", "c"] as const;
-
-export function emptyFaceReferences(): FaceReference[] {
-  return defaultNames.map((name) => ({ id: crypto.randomUUID(), name, imageDataUrl: "" }));
-}
-
-/** One row per league team index so finals and storage always align with `league.teams`. */
-export function faceReferencesAligned(teams: Team[] | TeamInput[], stored?: FaceReference[]): FaceReference[] {
-  const fallbacks = emptyFaceReferences();
-  return teams.map((_, index) => {
-    const row = stored?.[index];
-    if (row) return row;
-    return { id: crypto.randomUUID(), name: fallbacks[index]?.name ?? `Team ${index + 1}`, imageDataUrl: "" };
-  });
-}
 
 export function FaceReferenceFields({
   value,

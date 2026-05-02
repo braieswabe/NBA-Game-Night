@@ -1,12 +1,20 @@
+import { faceReferencesAligned, facePortraitDisplayUrl } from "@/lib/face-references-align";
+import {
+  canonicalLedgerName,
+  isLedgerOwnerName,
+  LEDGER_OWNER_NAMES,
+  ledgerNameForTeamSlot,
+  type LedgerOwnerName,
+} from "@/lib/ledger-owners";
 import type { FaceReference, Game, League, Team } from "@/lib/types";
 
 export type LeaderboardEntry = {
-  name: string;
+  name: LedgerOwnerName;
   championships: number;
   finalsAppearances: number;
   teams: string[];
-  avatarImageUrl?: string;
-  referenceImageDataUrl?: string;
+  /** Uploaded reference photo, or legacy AI portrait — no extra step required. */
+  portraitUrl?: string;
 };
 
 export function completedGames(league: League) {
@@ -21,19 +29,55 @@ export function teamForGame(league: League, game: Game, teamId: string) {
   return league.teams.find((team) => team.id === teamId);
 }
 
-export function ownerForTeam(league: League, team?: Team) {
+export function ownerForTeam(league: League, team?: Team): LedgerOwnerName | null {
   if (!team) return null;
-  if (team.ownerName) return team.ownerName;
   const index = league.teams.findIndex((candidate) => candidate.id === team.id);
-  return league.faceReferences?.[index]?.name ?? team.name;
+  if (index < 0) return null;
+  const ref = league.faceReferences?.[index];
+  const raw = (team.ownerName ?? ref?.name ?? "").trim();
+  const canon = canonicalLedgerName(raw);
+  if (canon) return canon;
+  return ledgerNameForTeamSlot(index);
 }
 
 export function faceForOwner(league: League, ownerName: string): FaceReference | undefined {
-  return league.faceReferences?.find((reference) => reference.name.toLowerCase() === ownerName.toLowerCase());
+  const target =
+    canonicalLedgerName(ownerName) ??
+    (isLedgerOwnerName(ownerName) ? (ownerName.toUpperCase() as LedgerOwnerName) : null);
+  if (!target) {
+    return league.faceReferences?.find((reference) => reference.name.toLowerCase() === ownerName.toLowerCase());
+  }
+  const aligned = faceReferencesAligned(league.teams, league.faceReferences);
+  return aligned.find(
+    (reference, index) => (canonicalLedgerName(reference.name) ?? LEDGER_OWNER_NAMES[index]) === target,
+  );
 }
 
+function collectLedgerPortrait(leagues: League[], player: LedgerOwnerName): string | undefined {
+  let bestScore = -1;
+  let portrait: string | undefined;
+
+  for (const league of leagues) {
+    const aligned = faceReferencesAligned(league.teams, league.faceReferences);
+    aligned.forEach((ref, index) => {
+      const slot = canonicalLedgerName(ref.name) ?? LEDGER_OWNER_NAMES[index];
+      if (slot !== player) return;
+      const url = facePortraitDisplayUrl(ref);
+      if (!url) return;
+      const score = (ref.imageDataUrl?.trim() ? 4 : 0) + (ref.avatarImageUrl?.trim() ? 1 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        portrait = url;
+      }
+    });
+  }
+  return portrait;
+}
+
+/** Always BRAIE → LORENZO → ALLEN with merged stats and best-known face assets across leagues. */
 export function buildLeaderboard(leagues: League[]): LeaderboardEntry[] {
-  const entries = new Map<string, LeaderboardEntry>();
+  const tally = new Map<LedgerOwnerName, { championships: number; finalsAppearances: number; teams: Set<string> }>();
+  LEDGER_OWNER_NAMES.forEach((id) => tally.set(id, { championships: 0, finalsAppearances: 0, teams: new Set<string>() }));
 
   leagues.forEach((league) => {
     completedFinals(league).forEach((game) => {
@@ -44,43 +88,27 @@ export function buildLeaderboard(leagues: League[]): LeaderboardEntry[] {
       [home, away].forEach((team) => {
         const owner = ownerForTeam(league, team);
         if (!owner || !team) return;
-        const face = faceForOwner(league, owner);
-        const entry = getEntry(entries, owner, face);
-        entry.finalsAppearances += 1;
-        if (!entry.teams.includes(team.name)) entry.teams.push(team.name);
+        const row = tally.get(owner)!;
+        row.finalsAppearances += 1;
+        if (!row.teams.has(team.name)) row.teams.add(team.name);
       });
 
       const winnerOwner = ownerForTeam(league, winner);
       if (!winnerOwner) return;
-      const face = faceForOwner(league, winnerOwner);
-      const entry = getEntry(entries, winnerOwner, face);
+      const entry = tally.get(winnerOwner)!;
       entry.championships += 1;
-      if (winner && !entry.teams.includes(winner.name)) entry.teams.push(winner.name);
+      if (winner && !entry.teams.has(winner.name)) entry.teams.add(winner.name);
     });
   });
 
-  return [...entries.values()].sort(
-    (a, b) => b.championships - a.championships || b.finalsAppearances - a.finalsAppearances || a.name.localeCompare(b.name),
-  );
-}
-
-function getEntry(entries: Map<string, LeaderboardEntry>, name: string, face?: FaceReference) {
-  const key = name.toLowerCase();
-  const existing = entries.get(key);
-  if (existing) {
-    existing.avatarImageUrl ||= face?.avatarImageUrl;
-    existing.referenceImageDataUrl ||= face?.imageDataUrl;
-    return existing;
-  }
-
-  const entry: LeaderboardEntry = {
-    name,
-    championships: 0,
-    finalsAppearances: 0,
-    teams: [],
-    avatarImageUrl: face?.avatarImageUrl,
-    referenceImageDataUrl: face?.imageDataUrl,
-  };
-  entries.set(key, entry);
-  return entry;
+  return LEDGER_OWNER_NAMES.map((id) => {
+    const row = tally.get(id)!;
+    return {
+      name: id,
+      championships: row.championships,
+      finalsAppearances: row.finalsAppearances,
+      teams: [...row.teams],
+      portraitUrl: collectLedgerPortrait(leagues, id),
+    };
+  });
 }
