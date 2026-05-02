@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRecord } from "@/lib/utils";
-import { getLeagueWithDatabase, simulateAndSaveGame } from "@/lib/storage";
+import { getLeague, getLeagueWithDatabase, simulateAndSaveGame } from "@/lib/storage";
 import type { Game, League } from "@/lib/types";
 
 export default function LeaguePage() {
@@ -22,9 +22,14 @@ export default function LeaguePage() {
 
   useEffect(() => {
     let active = true;
+    const cached = getLeague(params.id);
+    if (cached) {
+      setLeague(cached);
+      setLoadedLeagueId(params.id);
+    }
     void getLeagueWithDatabase(params.id).then((nextLeague) => {
       if (!active) return;
-      setLeague(nextLeague ?? null);
+      if (nextLeague) setLeague(nextLeague);
       setLoadedLeagueId(params.id);
     });
     return () => {

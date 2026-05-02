@@ -3,7 +3,7 @@
 import { buildChampionshipImageRequest } from "@/lib/championship-image";
 import { buildHighlightImageRequestBody } from "@/lib/highlight-image";
 import { applySimulatedGame, createLeague, lockSimulationResult, simulateGame } from "@/lib/simulation";
-import type { FaceReference, Game, League, Simulation, TeamInput } from "@/lib/types";
+import type { FaceReference, Game, League, LeagueSummary, Simulation, TeamInput } from "@/lib/types";
 
 const STORAGE_KEY = "court-legends-leagues";
 
@@ -18,22 +18,87 @@ export function loadLeagues(): League[] {
   }
 }
 
+let loadLeaguesInflight: Promise<League[]> | null = null;
+let lastBackgroundDbSyncMs = 0;
+const BACKGROUND_DB_SYNC_COOLDOWN_MS = 90_000;
+
+function leagueIdsNeedingFullFetch(local: League[], summaries: LeagueSummary[]): string[] {
+  const locals = new Map(local.map((l) => [l.id, l]));
+  return summaries
+    .filter((s) => {
+      const loc = locals.get(s.id);
+      if (!loc) return true;
+      return new Date(s.updatedAt).getTime() > new Date(loc.updatedAt).getTime();
+    })
+    .map((s) => s.id);
+}
+
 export async function loadLeaguesWithDatabase(): Promise<League[]> {
-  const local = loadLeagues();
-  try {
-    const response = await fetch("/api/leagues");
-    if (!response.ok) return local;
-    const payload = (await response.json()) as { leagues?: League[]; database?: string };
-    const remote = payload.leagues ?? [];
-    const merged = mergeLeagues(local, remote);
-    saveLeagues(merged);
-    if (payload.database === "connected") {
-      void syncLocalLeaguesToDatabase(local, remote);
+  if (loadLeaguesInflight) return loadLeaguesInflight;
+  loadLeaguesInflight = (async () => {
+    const local = loadLeagues();
+    try {
+      const response = await fetch("/api/leagues");
+      if (!response.ok) return local;
+      const payload = (await response.json()) as {
+        summaries?: LeagueSummary[];
+        leagues?: League[];
+        database?: string;
+      };
+
+      if (payload.database !== "connected") return local;
+
+      if (payload.leagues && payload.leagues.length > 0) {
+        const merged = mergeLeagues(local, payload.leagues);
+        saveLeagues(merged);
+        const now = Date.now();
+        if (now - lastBackgroundDbSyncMs > BACKGROUND_DB_SYNC_COOLDOWN_MS) {
+          lastBackgroundDbSyncMs = now;
+          void syncLocalLeaguesToDatabaseLegacy(local, payload.leagues);
+        }
+        return merged;
+      }
+
+      const summaries = payload.summaries ?? [];
+      if (summaries.length === 0) return local;
+
+      const ids = leagueIdsNeedingFullFetch(local, summaries);
+      const fetched = (
+        await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch(`/api/leagues/${encodeURIComponent(id)}`);
+            if (!res.ok) return null;
+            const body = (await res.json()) as { league?: League | null };
+            return body.league ?? null;
+          }),
+        )
+      ).filter((l): l is League => Boolean(l));
+
+      const fetchedMap = new Map(fetched.map((l) => [l.id, l]));
+      const remoteRepresentatives: League[] = summaries
+        .map((s) => {
+          const fresh = fetchedMap.get(s.id);
+          if (fresh) return fresh;
+          return local.find((l) => l.id === s.id) ?? null;
+        })
+        .filter((l): l is League => l !== null);
+
+      const merged = mergeLeagues(local, remoteRepresentatives);
+      saveLeagues(merged);
+
+      const now = Date.now();
+      if (now - lastBackgroundDbSyncMs > BACKGROUND_DB_SYNC_COOLDOWN_MS) {
+        lastBackgroundDbSyncMs = now;
+        void syncLocalLeaguesToDatabase(local, summaries);
+      }
+      return merged;
+    } catch {
+      return local;
+    } finally {
+      loadLeaguesInflight = null;
     }
-    return merged;
-  } catch {
-    return local;
-  }
+  })();
+  return loadLeaguesInflight;
 }
 
 export async function getLeagueWithDatabase(leagueId: string): Promise<League | undefined> {
@@ -105,14 +170,22 @@ export function mergeLeagues(local: League[], remote: League[]) {
   return [...byId.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
-async function syncLocalLeaguesToDatabase(local: League[], remote: League[]) {
-  const remoteById = new Map(remote.map((league) => [league.id, league]));
+async function syncLocalLeaguesToDatabase(local: League[], remoteSummaries: LeagueSummary[]) {
+  const remoteById = new Map(remoteSummaries.map((s) => [s.id, s]));
   const leaguesToSync = local.filter((league) => {
-    const remoteLeague = remoteById.get(league.id);
-    return !remoteLeague || new Date(league.updatedAt).getTime() > new Date(remoteLeague.updatedAt).getTime();
+    const remote = remoteById.get(league.id);
+    return !remote || new Date(league.updatedAt).getTime() > new Date(remote.updatedAt).getTime();
   });
-
   await Promise.allSettled(leaguesToSync.map(persistLeagueToDatabase));
+}
+
+async function syncLocalLeaguesToDatabaseLegacy(local: League[], remote: League[]) {
+  const remoteSummaries: LeagueSummary[] = remote.map((l) => ({
+    id: l.id,
+    name: l.name,
+    updatedAt: l.updatedAt,
+  }));
+  await syncLocalLeaguesToDatabase(local, remoteSummaries);
 }
 
 export async function simulateAndSaveGame(league: League, game: Game) {

@@ -130,3 +130,10 @@ export type League = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** League directory row from the database (no nested teams/games/images). */
+export type LeagueSummary = {
+  id: string;
+  name: string;
+  updatedAt: string;
+};

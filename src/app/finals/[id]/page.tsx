@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   generateAndSaveChampionshipImage,
   generateAndSaveHighlightImage,
+  loadLeagues,
   loadLeaguesWithDatabase,
   updateLeagueFaceReferences,
 } from "@/lib/storage";
@@ -28,10 +29,18 @@ export default function FinalsPage() {
 
   useEffect(() => {
     let active = true;
-    void loadLeaguesWithDatabase().then((leagues) => {
-      const found = leagues
+    const findFinals = (leagues: League[]) =>
+      leagues
         .map((league) => ({ league, game: league.games.find((candidate) => candidate.id === params.id) }))
         .find((candidate): candidate is { league: League; game: Game } => Boolean(candidate.game));
+
+    const cached = findFinals(loadLeagues());
+    if (cached) {
+      setState(cached);
+      setLoadedFinalsId(params.id);
+    }
+    void loadLeaguesWithDatabase().then((leagues) => {
+      const found = findFinals(leagues);
       if (!active) return;
       setState(found ?? null);
       setLoadedFinalsId(params.id);

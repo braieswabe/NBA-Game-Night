@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { hasDatabaseUrl, listDatabaseLeagues, saveDatabaseLeague } from "@/lib/database";
+import { hasDatabaseUrl, listLeagueSummaries, saveDatabaseLeague } from "@/lib/database";
 import type { League } from "@/lib/types";
 
 const leaguePayloadSchema = z.object({
@@ -9,14 +9,17 @@ const leaguePayloadSchema = z.object({
 
 export async function GET() {
   if (!hasDatabaseUrl()) {
-    return NextResponse.json({ leagues: [], database: "not_configured" });
+    return NextResponse.json({ summaries: [], leagues: [], database: "not_configured" });
   }
 
   try {
-    const leagues = await listDatabaseLeagues();
-    return NextResponse.json({ leagues: leagues ?? [], database: "connected" });
+    const summaries = await listLeagueSummaries();
+    if (summaries == null) {
+      return NextResponse.json({ summaries: [], leagues: [], database: "error" }, { status: 503 });
+    }
+    return NextResponse.json({ summaries, leagues: [], database: "connected" });
   } catch {
-    return NextResponse.json({ leagues: [], database: "error" }, { status: 503 });
+    return NextResponse.json({ summaries: [], leagues: [], database: "error" }, { status: 503 });
   }
 }
 

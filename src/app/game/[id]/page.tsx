@@ -8,7 +8,7 @@ import { ArenaShell } from "@/components/court/arena-shell";
 import { GamePresentation } from "@/components/court/game-presentation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { generateAndSaveHighlightImage, loadLeaguesWithDatabase } from "@/lib/storage";
+import { generateAndSaveHighlightImage, loadLeagues, loadLeaguesWithDatabase } from "@/lib/storage";
 import type { Game, League } from "@/lib/types";
 
 export default function GamePage() {
@@ -20,10 +20,18 @@ export default function GamePage() {
 
   useEffect(() => {
     let active = true;
-    void loadLeaguesWithDatabase().then((leagues) => {
-      const found = leagues
+    const findGame = (leagues: League[]) =>
+      leagues
         .map((league) => ({ league, game: league.games.find((candidate) => candidate.id === params.id) }))
         .find((candidate): candidate is { league: League; game: Game } => Boolean(candidate.game));
+
+    const cached = findGame(loadLeagues());
+    if (cached) {
+      setState(cached);
+      setLoadedGameId(params.id);
+    }
+    void loadLeaguesWithDatabase().then((leagues) => {
+      const found = findGame(leagues);
       if (!active) return;
       setState(found ?? null);
       setLoadedGameId(params.id);
